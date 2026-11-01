@@ -108,6 +108,8 @@ public struct ReceiptParser: Sendable {
     private func makeItem(label: String, amount: Decimal, pendingName: String?) -> ParsedLineItem? {
         // Aldi, Lidl and others print a product code before the name: "335782 Water Still Spring".
         var name = RX.replace(#"^\d{4,}\s+"#, in: label, with: "")
+        // Lidl and others sometimes print the code after the name: "Speciality Blonde Be 0083184".
+        name = RX.replace(#"\s+\d{5,}$"#, in: name, with: "")
         var quantity = 1
 
         // "2 x £1.50" or "2 @ 1.50" printed on its own row under the item name.

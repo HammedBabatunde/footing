@@ -4,6 +4,8 @@ An iPhone app for tracking spending in the UK. Scan a receipt with the camera, p
 
 **Everything runs on the iPhone and works with no internet.** Receipts are read with Apple's on-device text recognition (Vision), categorised by on-device AI (Apple Intelligence, with built-in rules as a fallback), and stored on the phone with SwiftData. No account is needed.
 
+**Back up and restore (offline).** Deleting the app deletes its receipts. In Settings → Backup, "Back up to a file" saves every receipt (with photos, items and categories) and your category choices as one JSON file wherever you pick, such as Files, iCloud Drive or AirDrop to a Mac. "Restore from a backup" loads it back, skipping receipts already in the app. No internet needed.
+
 **Optional Notion backup.** In Settings → Notion sync you can connect a Notion page. About once a week, when the app is opened with internet, new receipts (merchant, date, total, VAT, payment, categories and every item) are copied to a "SpendScan receipts" database there. Deleted receipts are moved to Notion's trash. If there's no internet, nothing changes and it tries again next time. This is the only network code in the app, and it only talks to `api.notion.com`.
 
 ## Security

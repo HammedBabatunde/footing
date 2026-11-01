@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 import ReceiptKit
 
 enum SettingsKeys {
@@ -44,6 +45,11 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.appearance) private var appearance = AppAppearance.system
     @State private var confirmDeleteAll = false
     @State private var lockMessage: String?
+    @AppStorage("lastBackupAt") private var lastBackupAt: Double = 0
+    @State private var backupDocument: BackupDocument?
+    @State private var showBackupExporter = false
+    @State private var showRestoreImporter = false
+    @State private var backupMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -98,10 +104,12 @@ struct SettingsView: View {
                     } label: {
                         LabeledContent("Notion sync", value: NotionSync.shared.isConnected ? "On" : "Off")
                     }
+                    Button("Back up to a file") { makeBackup() }
+                    Button("Restore from a backup") { showRestoreImporter = true }
                 } header: {
                     Text("Backup")
                 } footer: {
-                    Text("Copies your receipts to Notion about once a week, when you have internet. The app works the same without it.")
+                    Text("Deleting the app deletes its receipts. Back up to a file in Files or iCloud Drive to keep a copy you can restore, with no internet needed. \(lastBackupText) Notion sync also copies receipts about once a week when you're online.")
                 }
 
                 Section("Privacy and data") {
@@ -129,6 +137,25 @@ struct SettingsView: View {
             } message: {
                 Text(lockMessage ?? "")
             }
+            .fileExporter(isPresented: $showBackupExporter, document: backupDocument, contentType: .json,
+                          defaultFilename: Backup.suggestedFilename) { outcome in
+                switch outcome {
+                case .success:
+                    lastBackupAt = Date().timeIntervalSince1970
+                    backupMessage = "Backup saved. Keep it somewhere outside the app, like iCloud Drive or your Mac."
+                case .failure(let error):
+                    backupMessage = "Couldn't save the backup. \(error.localizedDescription)"
+                }
+                backupDocument = nil
+            }
+            .fileImporter(isPresented: $showRestoreImporter, allowedContentTypes: [.json]) { outcome in
+                restoreBackup(outcome)
+            }
+            .alert("Backup", isPresented: backupMessageBinding) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(backupMessage ?? "")
+            }
             .confirmationDialog("Delete all receipts?", isPresented: $confirmDeleteAll, titleVisibility: .visible) {
                 Button("Delete all", role: .destructive) {
                     for receipt in receipts {
@@ -144,6 +171,43 @@ struct SettingsView: View {
 }
 
 extension SettingsView {
+    private var lastBackupText: String {
+        guard lastBackupAt > 0 else { return "You haven't made a backup yet." }
+        let date = Date(timeIntervalSince1970: lastBackupAt)
+        return "Last backup: \(date.formatted(date: .abbreviated, time: .shortened))."
+    }
+
+    private var backupMessageBinding: Binding<Bool> {
+        Binding(get: { backupMessage != nil }, set: { if !$0 { backupMessage = nil } })
+    }
+
+    private func makeBackup() {
+        do {
+            backupDocument = BackupDocument(data: try Backup.make(context: modelContext))
+            showBackupExporter = true
+        } catch {
+            backupMessage = "Couldn't make the backup. \(error.localizedDescription)"
+        }
+    }
+
+    private func restoreBackup(_ outcome: Result<URL, Error>) {
+        do {
+            let url = try outcome.get()
+            let canAccess = url.startAccessingSecurityScopedResource()
+            defer { if canAccess { url.stopAccessingSecurityScopedResource() } }
+            let data = try Data(contentsOf: url)
+            let result = try Backup.restore(data, into: modelContext)
+            switch (result.added, result.skipped) {
+            case (0, 0): backupMessage = "That backup has no receipts in it."
+            case (0, _): backupMessage = "All \(result.skipped) receipts in that backup are already in the app."
+            case (_, 0): backupMessage = "Restored \(result.added) receipts."
+            default: backupMessage = "Restored \(result.added) receipts. \(result.skipped) were already in the app."
+            }
+        } catch {
+            backupMessage = error.localizedDescription
+        }
+    }
+
     /// Turning the lock on asks for Face ID first, so you know it works before you rely on it.
     private var faceIDBinding: Binding<Bool> {
         Binding {

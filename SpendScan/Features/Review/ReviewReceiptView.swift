@@ -5,6 +5,7 @@ import ReceiptKit
 /// Figma screen 04: check what was read, fix anything, then save.
 struct ReviewReceiptView: View {
     let result: ScanResult
+    var onCancel: () -> Void
     var onSaved: () -> Void
 
     @Environment(\.modelContext) private var modelContext
@@ -15,11 +16,11 @@ struct ReviewReceiptView: View {
     @State private var total: Decimal
     @State private var category: SpendCategory
     @State private var items: [EditableItem]
-    /// Once you change the items, the total follows them and the mismatch warning goes away.
-    @State private var editedItems = false
+    @State private var showOriginal = false
 
-    init(result: ScanResult, onSaved: @escaping () -> Void) {
+    init(result: ScanResult, onCancel: @escaping () -> Void, onSaved: @escaping () -> Void) {
         self.result = result
+        self.onCancel = onCancel
         self.onSaved = onSaved
         let parsed = result.parsed
         _merchant = State(initialValue: parsed.merchantName ?? "")
@@ -30,97 +31,140 @@ struct ReviewReceiptView: View {
     }
 
     var body: some View {
-        Form {
+        List {
             if let data = result.imageData, let image = UIImage(data: data) {
                 Section {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxHeight: 220)
-                        .frame(maxWidth: .infinity)
+                    Button { showOriginal = true } label: {
+                        HStack(spacing: Spacing.md) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 48, height: 64)
+                                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Original receipt").font(.headline).foregroundStyle(Color.textPrimary)
+                                Text("Tap to view full size").font(.footnote).foregroundStyle(Color.textSecondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Color.textSecondary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .themedRow()
+                }
+                .fullScreenCover(isPresented: $showOriginal) {
+                    OriginalReceiptView(image: image)
                 }
             }
 
             Section {
-                LabeledContent("Shop") {
-                    TextField("Name", text: $merchant)
+                field("Merchant") {
+                    TextField("Shop name", text: $merchant)
                         .multilineTextAlignment(.trailing)
                 }
-                DatePicker("Date", selection: $date)
-                LabeledContent("Category") {
+                field("Date") {
+                    DatePicker("Date", selection: $date)
+                        .labelsHidden()
+                }
+                field("Category") {
                     CategoryMenu(selection: $category)
                 }
-                LabeledContent("Total") {
-                    PriceField(title: "Total", value: $total)
-                        .fontWeight(.semibold)
+                if let payment = result.parsed.paymentMethod {
+                    field("Paid with") { Text(payment).lineLimit(1) }
                 }
-            } header: {
-                Text("Details")
+                field("Total") {
+                    PriceField(title: "0.00", value: $total)
+                        .fontWeight(.bold)
+                }
             } footer: {
-                if showsMismatch {
-                    // A quiet note, not a warning: often a discount or a line the scan missed.
-                    HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
-                        Text("Items add up to \(itemsTotal.gbp).")
-                        Button("Use this total") { total = itemsTotal }
-                            .font(.footnote.weight(.semibold))
-                            .buttonStyle(.borderless)
-                            .tint(Color.accentDefault)
+                if result.engine != "Manual" {
+                    Label {
+                        Text("Categories picked by \(result.engine == "Built-in rules" ? "built-in rules" : "on-device AI"). Tap any category to change it.")
+                    } icon: {
+                        Image(systemName: "sparkles").foregroundStyle(Color.accentDefault)
                     }
+                    .font(.footnote)
+                    .foregroundStyle(Color.textSecondary)
                 }
             }
 
             Section {
                 ForEach($items) { $item in
-                    VStack(alignment: .leading, spacing: Spacing.sm) {
-                        HStack(alignment: .firstTextBaseline, spacing: Spacing.md) {
-                            TextField("Item name", text: $item.name)
-                            PriceField(title: "0.00", value: $item.lineTotal, keyboard: .numbersAndPunctuation)
-                        }
-                        HStack {
-                            CategoryMenu(selection: $item.category)
-                            Spacer()
-                            Button {
+                    itemRow($item)
+                        .themedRow()
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button("Remove", systemImage: "trash", role: .destructive) {
                                 items.removeAll { $0.id == item.id }
-                            } label: {
-                                Image(systemName: "trash")
-                                    .font(.subheadline)
-                                    .foregroundStyle(Color.statusNegative)
-                                    .frame(width: 32, height: 32)
-                                    .contentShape(Rectangle())
                             }
-                            .buttonStyle(.borderless)
-                            .accessibilityLabel("Remove \(item.name)")
                         }
-                    }
-                    .padding(.vertical, Spacing.xs)
-                    // Keep every divider lined up with the text.
-                    .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
+                        .contextMenu {
+                            Button("Remove item", systemImage: "trash", role: .destructive) {
+                                items.removeAll { $0.id == item.id }
+                            }
+                        }
                 }
-                // Swipe left on an item to delete it, or tap the bin.
-                .onDelete { items.remove(atOffsets: $0) }
-
-                Button("Add item", systemImage: "plus") {
-                    items.append(EditableItem(name: "", lineTotal: 0, category: category))
-                }
-                .tint(Color.accentDefault)
             } header: {
-                Text("Items (\(items.count))")
-            } footer: {
-                if result.engine != "Manual" {
-                    Label("Categories picked on your iPhone by \(result.engine). Tap any category to change it.", systemImage: "sparkles")
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Items (\(items.count))")
+                        .font(.title3.bold())
+                        .foregroundStyle(Color.textPrimary)
+                    Spacer()
+                    Button("Add item", systemImage: "plus") {
+                        items.append(EditableItem(name: "", lineTotal: 0, category: category))
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(Color.accentDefault)
+                    .buttonStyle(.borderless)
                 }
+                .textCase(nil)
+            } footer: {
+                VStack(spacing: Spacing.sm) {
+                    totalCheck
+                    if !items.isEmpty {
+                        Text("Swipe left on an item to remove it.")
+                            .font(.caption)
+                            .foregroundStyle(Color.textSecondary)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, Spacing.sm)
+            }
+
+            Section {
+                Button(action: save) {
+                    Text("Save receipt")
+                        .font(.headline)
+                        .foregroundStyle(Color.textOnAccent)
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .background(Color.accentDefault, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(merchant.isEmpty)
+                .opacity(merchant.isEmpty ? 0.5 : 1)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
             }
         }
+        .listStyle(.insetGrouped)
+        .listSectionSpacing(Spacing.lg)
+        .themedList()
         // When you change a price, add or remove an item, the total follows the items.
         // You can still type a different total afterwards.
         .onChange(of: items.map(\.lineTotal)) { _, _ in
-            editedItems = true
             total = itemsTotal
         }
         .scrollDismissesKeyboard(.interactively)
         .navigationTitle("Review receipt")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden()
+        .toolbar(.visible, for: .navigationBar)
         .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel", action: onCancel)
+            }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save", action: save)
                     .fontWeight(.semibold)
@@ -129,9 +173,59 @@ struct ReviewReceiptView: View {
         }
     }
 
+    /// A Details row: grey label on the left, the editable value on the right.
+    private func field<Value: View>(_ label: String, @ViewBuilder value: () -> Value) -> some View {
+        HStack(spacing: Spacing.md) {
+            Text(label).foregroundStyle(Color.textSecondary)
+            Spacer(minLength: Spacing.sm)
+            value().foregroundStyle(Color.textPrimary)
+        }
+        .themedRow()
+    }
+
+    /// Figma: Line Item Row. Name and "1 × £1.65" on the left, category pill and price on the right.
+    private func itemRow(_ item: Binding<EditableItem>) -> some View {
+        HStack(spacing: Spacing.sm) {
+            VStack(alignment: .leading, spacing: 2) {
+                TextField("Item name", text: item.name)
+                    .font(.body)
+                    .foregroundStyle(Color.textPrimary)
+                Text("\(item.wrappedValue.quantity) × \(item.wrappedValue.unitPrice.gbp)")
+                    .font(.footnote)
+                    .foregroundStyle(Color.textSecondary)
+            }
+            Spacer(minLength: Spacing.xs)
+            CategoryMenu(selection: item.category, compact: true)
+            PriceField(title: "0.00", value: item.lineTotal, keyboard: .numbersAndPunctuation)
+                .foregroundStyle(Color.textPrimary)
+        }
+        .padding(.vertical, 2)
+    }
+
+    /// Green tick when the items match the total; otherwise a quiet note with a fix.
+    @ViewBuilder
+    private var totalCheck: some View {
+        if items.isEmpty {
+            EmptyView()
+        } else if itemsMatch {
+            Label("Items add up to \(itemsTotal.gbp), matching the receipt total", systemImage: "checkmark")
+                .font(.caption)
+                .foregroundStyle(Color.accentDefault)
+        } else {
+            HStack(spacing: Spacing.sm) {
+                Text("Items add up to \(itemsTotal.gbp).")
+                    .foregroundStyle(Color.textSecondary)
+                Button("Use this total") { total = itemsTotal }
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color.accentDefault)
+                    .buttonStyle(.borderless)
+            }
+            .font(.caption)
+        }
+    }
+
     private var itemsTotal: Decimal { items.reduce(0) { $0 + $1.lineTotal } }
     private var itemsMatch: Bool { items.isEmpty || itemsTotal == total }
-    private var showsMismatch: Bool { result.source != .manual && !editedItems && !itemsMatch }
 
     private func save() {
         let receipt = Receipt(merchantName: merchant, purchaseDate: date, total: total, category: category, source: result.source)
@@ -161,6 +255,31 @@ struct ReviewReceiptView: View {
     }
 }
 
+/// The receipt photo, full screen, pinch to zoom.
+struct OriginalReceiptView: View {
+    let image: UIImage
+    @Environment(\.dismiss) private var dismiss
+    @State private var zoom: CGFloat = 1
+
+    var body: some View {
+        NavigationStack {
+            ScrollView([.horizontal, .vertical]) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: UIScreen.main.bounds.width * zoom)
+                    .gesture(MagnifyGesture().onChanged { zoom = min(max($0.magnification, 1), 4) })
+            }
+            .background(Color.bgPrimary)
+            .navigationTitle("Original receipt")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+        }
+    }
+}
+
 struct EditableItem: Identifiable {
     let id = UUID()
     var name: String
@@ -170,6 +289,10 @@ struct EditableItem: Identifiable {
     var category: SpendCategory
     /// What the AI or rules picked, to spot your corrections.
     var suggestedCategory: SpendCategory?
+
+    var unitPrice: Decimal {
+        quantity > 0 ? lineTotal / Decimal(quantity) : lineTotal
+    }
 
     init(name: String, lineTotal: Decimal, category: SpendCategory) {
         self.name = name

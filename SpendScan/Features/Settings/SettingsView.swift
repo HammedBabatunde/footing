@@ -8,6 +8,7 @@ enum SettingsKeys {
     static let learnFromCorrections = "learnFromCorrections"
     static let faceIDLock = "faceIDLock"
     static let appearance = "appearance"
+    static let userName = "userName"
 }
 
 /// Light, dark, or follow the iPhone. Every colour in Theme.swift has a light and a dark value.
@@ -43,6 +44,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.learnFromCorrections) private var learnFromCorrections = true
     @AppStorage(SettingsKeys.faceIDLock) private var faceIDLock = false
     @AppStorage(SettingsKeys.appearance) private var appearance = AppAppearance.system
+    @AppStorage(SettingsKeys.userName) private var userName = ""
     @State private var confirmDeleteAll = false
     @State private var lockMessage: String?
     @AppStorage("lastBackupAt") private var lastBackupAt: Double = 0
@@ -62,7 +64,11 @@ struct SettingsView: View {
                                 Text("Sorts every receipt and item for you").font(.footnote).foregroundStyle(Color.textSecondary)
                             }
                         } icon: {
-                            Image(systemName: "sparkles").foregroundStyle(Color.accentDefault)
+                            Image(systemName: "sparkles")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(Color.accentDefault)
+                                .frame(width: 30, height: 30)
+                                .background(Color.accentSubtle, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                         }
                     }
                     LabeledContent("AI engine", value: CategoryEngines.activeEngineName)
@@ -88,6 +94,11 @@ struct SettingsView: View {
                 }
 
                 Section("Preferences") {
+                    LabeledContent("Your name") {
+                        TextField("For the Home greeting", text: $userName)
+                            .multilineTextAlignment(.trailing)
+                            .textContentType(.givenName)
+                    }
                     Picker("Appearance", selection: $appearance) {
                         ForEach(AppAppearance.allCases) { option in
                             Text(option.title).tag(option)
@@ -131,6 +142,7 @@ struct SettingsView: View {
                 }
                 .listRowBackground(Color.clear)
             }
+            .themedList()
             .navigationTitle("Settings")
             .alert("Face ID lock", isPresented: lockMessageBinding) {
                 Button("OK", role: .cancel) {}

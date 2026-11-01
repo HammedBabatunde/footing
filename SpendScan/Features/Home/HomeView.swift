@@ -5,7 +5,9 @@ import ReceiptKit
 
 /// Figma screen 01.
 struct HomeView: View {
+    @Binding var selection: AppTab
     @Query(sort: \Receipt.purchaseDate, order: .reverse) private var receipts: [Receipt]
+    @AppStorage(SettingsKeys.userName) private var userName = ""
     @State private var showAddReceipt = false
 
     private let aggregator = SpendAggregator()
@@ -20,8 +22,12 @@ struct HomeView: View {
                     } else {
                         monthCard
                         HStack(spacing: Spacing.md) {
-                            StatCard(label: "This week", value: weekTotal.gbp)
-                            StatCard(label: "Receipts", value: "\(monthReceiptCount)", detail: "this month")
+                            StatCard(label: "This week", value: weekTotal.gbp) {
+                                ChangeLabel(current: weekTotal, previous: lastWeekTotal) { pct, _ in "\(pct)% vs last week" }
+                            }
+                            StatCard(label: "Receipts", value: "\(monthReceiptCount)") {
+                                Text("scanned this month").font(.caption.weight(.medium)).foregroundStyle(Color.textSecondary)
+                            }
                         }
                         categoryCard
                         recentReceipts
@@ -41,10 +47,12 @@ struct HomeView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide)))
+            Text(Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide).locale(Locale(identifier: "en_GB"))))
                 .font(.footnote)
                 .foregroundStyle(Color.textSecondary)
-            Text("Hello").font(.largeTitle.bold())
+            Text(userName.isEmpty ? "Hello" : "Hello, \(userName)")
+                .font(.largeTitle.bold())
+                .foregroundStyle(Color.textPrimary)
         }
         .padding(.top, Spacing.sm)
     }
@@ -64,26 +72,38 @@ struct HomeView: View {
                 .font(.subheadline)
                 .foregroundStyle(Color.textSecondary)
             AmountText(amount: monthTotal)
+            ChangeLabel(current: monthTotal, previous: lastMonthTotal) { pct, isDown in
+                "\(pct)% \(isDown ? "less" : "more") than \(lastMonthName)"
+            }
         }
     }
 
     private var categoryCard: some View {
         Card {
-            Text("Where it went").font(.title3.bold())
+            Text("Where it went").font(.title3.bold()).foregroundStyle(Color.textPrimary)
             HStack(spacing: 20) {
                 Chart(monthByCategory) { row in
-                    SectorMark(angle: .value("Spent", row.doubleValue), innerRadius: .ratio(0.68), angularInset: 1.5)
+                    SectorMark(angle: .value("Spent", row.doubleValue), innerRadius: .ratio(0.62), angularInset: 1.5)
                         .foregroundStyle(row.category.color)
                 }
-                .frame(width: 120, height: 120)
+                .chartLegend(.hidden)
+                .frame(width: 122, height: 122)
+                .overlay {
+                    // Whole pounds in the middle of the donut, as in Figma.
+                    Text(monthTotal.wholePounds)
+                        .font(.headline)
+                        .foregroundStyle(Color.textPrimary)
+                        .minimumScaleFactor(0.6)
+                        .padding(.horizontal, 26)
+                }
 
-                VStack(spacing: Spacing.sm) {
+                VStack(spacing: Spacing.md) {
                     ForEach(monthByCategory) { row in
                         HStack(spacing: Spacing.sm) {
                             Circle().fill(row.category.color).frame(width: 8, height: 8)
-                            Text(row.category.displayName).font(.subheadline)
+                            Text(row.category.displayName).font(.subheadline).foregroundStyle(Color.textPrimary)
                             Spacer()
-                            Text(row.amount.gbp).font(.subheadline.weight(.semibold))
+                            Text(row.amount.gbp).font(.subheadline.weight(.semibold)).foregroundStyle(Color.textPrimary)
                         }
                     }
                 }
@@ -93,31 +113,23 @@ struct HomeView: View {
 
     private var recentReceipts: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("Recent receipts").font(.title3.bold())
-            VStack(spacing: 0) {
+            SectionTitle(title: "Recent receipts", actionTitle: "See all") { selection = .receipts }
+            ListCard {
                 ForEach(receipts.prefix(3)) { receipt in
                     NavigationLink(value: receipt) {
-                        ReceiptRow(receipt: receipt).padding(.horizontal, Spacing.lg).padding(.vertical, Spacing.sm)
+                        ReceiptRow(receipt: receipt)
+                            .padding(.horizontal, Spacing.lg)
+                            .padding(.vertical, Spacing.sm)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    if receipt.id != receipts.prefix(3).last?.id { Divider() }
                 }
             }
-            .background(Color.bgSurface, in: RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
         }
     }
 
     private var scanButton: some View {
-        Button { showAddReceipt = true } label: {
-            Image(systemName: "viewfinder")
-                .font(.title.weight(.semibold))
-                .foregroundStyle(Color.textOnAccent)
-                .frame(width: 64, height: 64)
-                .background(Color.accentDefault, in: Circle())
-                .shadow(color: Color.accentDefault.opacity(0.35), radius: 12, y: 6)
-        }
-        .padding(Spacing.lg)
-        .accessibilityLabel("Scan receipt")
+        ScanButton { showAddReceipt = true }
     }
 
     // MARK: Numbers
@@ -134,6 +146,20 @@ struct HomeView: View {
         return receipts.filter { week.contains($0.purchaseDate) }.reduce(0) { $0 + $1.total }
     }
 
+    private var lastWeekTotal: Decimal {
+        let week = aggregator.interval(for: .week, containing: aggregator.shift(.now, by: -1, .week))
+        return receipts.filter { week.contains($0.purchaseDate) }.reduce(0) { $0 + $1.total }
+    }
+
+    private var lastMonthTotal: Decimal {
+        let month = aggregator.interval(for: .month, containing: aggregator.shift(.now, by: -1, .month))
+        return receipts.filter { month.contains($0.purchaseDate) }.reduce(0) { $0 + $1.total }
+    }
+
+    private var lastMonthName: String {
+        aggregator.shift(.now, by: -1, .month).formatted(.dateTime.month(.wide))
+    }
+
     private var monthReceiptCount: Int {
         let month = aggregator.interval(for: .month, containing: .now)
         return receipts.filter { month.contains($0.purchaseDate) }.count
@@ -145,5 +171,5 @@ struct HomeView: View {
 }
 
 #Preview {
-    HomeView().modelContainer(PreviewData.container)
+    HomeView(selection: .constant(.home)).modelContainer(PreviewData.container)
 }

@@ -24,6 +24,10 @@ extension Color {
     static let categoryTransport = Color(light: 0x7C5CFA, dark: 0xA78BFA)
     static let categoryOther = Color(light: 0x64748B, dark: 0x94A3B8)
 
+    init(hex: UInt32) {
+        self.init(uiColor: UIColor(hex: hex))
+    }
+
     init(light: UInt32, dark: UInt32) {
         self.init(uiColor: UIColor { traits in
             UIColor(hex: traits.userInterfaceStyle == .dark ? dark : light)
@@ -81,5 +85,10 @@ extension Decimal {
     /// "£1,284.60"
     var gbp: String {
         formatted(.currency(code: "GBP").locale(Locale(identifier: "en_GB")))
+    }
+
+    /// "£1,285"
+    var wholePounds: String {
+        formatted(.currency(code: "GBP").precision(.fractionLength(0)).locale(Locale(identifier: "en_GB")))
     }
 }

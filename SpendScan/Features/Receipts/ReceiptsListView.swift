@@ -30,7 +30,11 @@ struct ReceiptsListView: View {
                             NavigationLink(value: receipt) { ReceiptRow(receipt: receipt) }
                         }
                         .onDelete { offsets in
-                            for index in offsets { modelContext.delete(group.receipts[index]) }
+                            for index in offsets {
+                                let receipt = group.receipts[index]
+                                NotionSync.receiptWillBeDeleted(receipt)
+                                modelContext.delete(receipt)
+                            }
                         }
                     } header: {
                         HStack {

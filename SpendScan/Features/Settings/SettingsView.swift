@@ -6,6 +6,30 @@ enum SettingsKeys {
     static let aiCategorisation = "aiCategorisation"
     static let learnFromCorrections = "learnFromCorrections"
     static let faceIDLock = "faceIDLock"
+    static let appearance = "appearance"
+}
+
+/// Light, dark, or follow the iPhone. Every colour in Theme.swift has a light and a dark value.
+enum AppAppearance: String, CaseIterable, Identifiable {
+    case system, light, dark
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: "Automatic"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
 }
 
 /// Figma screen 08.
@@ -17,7 +41,9 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.aiCategorisation) private var aiEnabled = true
     @AppStorage(SettingsKeys.learnFromCorrections) private var learnFromCorrections = true
     @AppStorage(SettingsKeys.faceIDLock) private var faceIDLock = false
+    @AppStorage(SettingsKeys.appearance) private var appearance = AppAppearance.system
     @State private var confirmDeleteAll = false
+    @State private var lockMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -38,7 +64,7 @@ struct SettingsView: View {
                 } header: {
                     Text("AI categorisation")
                 } footer: {
-                    Text("Everything runs on your iPhone and works with no internet. iPhones without Apple Intelligence use built-in rules instead. You can always change a category before saving.")
+                    Text("AI runs on your iPhone and works with no internet. iPhones without Apple Intelligence use built-in rules instead. You can always change a category before saving.")
                 }
 
                 Section("Categories") {
@@ -56,13 +82,30 @@ struct SettingsView: View {
                 }
 
                 Section("Preferences") {
+                    Picker("Appearance", selection: $appearance) {
+                        ForEach(AppAppearance.allCases) { option in
+                            Text(option.title).tag(option)
+                        }
+                    }
                     LabeledContent("Currency", value: "£ GBP")
                     LabeledContent("Week starts on", value: "Monday")
                     LabeledContent("Year runs", value: "Jan to Dec")
                 }
 
+                Section {
+                    NavigationLink {
+                        NotionSettingsView()
+                    } label: {
+                        LabeledContent("Notion sync", value: NotionSync.shared.isConnected ? "On" : "Off")
+                    }
+                } header: {
+                    Text("Backup")
+                } footer: {
+                    Text("Copies your receipts to Notion about once a week, when you have internet. The app works the same without it.")
+                }
+
                 Section("Privacy and data") {
-                    Toggle("Lock with Face ID", isOn: $faceIDLock) // TODO: enforce with LocalAuthentication in phase 5.
+                    Toggle("Lock with Face ID", isOn: faceIDBinding)
                     ShareLink(item: CSVExport.file(for: receipts), preview: SharePreview("Spending export")) {
                         Text("Export spending (CSV)")
                     }
@@ -81,14 +124,51 @@ struct SettingsView: View {
                 .listRowBackground(Color.clear)
             }
             .navigationTitle("Settings")
+            .alert("Face ID lock", isPresented: lockMessageBinding) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(lockMessage ?? "")
+            }
             .confirmationDialog("Delete all receipts?", isPresented: $confirmDeleteAll, titleVisibility: .visible) {
                 Button("Delete all", role: .destructive) {
-                    for receipt in receipts { modelContext.delete(receipt) }
+                    for receipt in receipts {
+                        NotionSync.receiptWillBeDeleted(receipt)
+                        modelContext.delete(receipt)
+                    }
                 }
             } message: {
                 Text("This can't be undone.")
             }
         }
+    }
+}
+
+extension SettingsView {
+    /// Turning the lock on asks for Face ID first, so you know it works before you rely on it.
+    private var faceIDBinding: Binding<Bool> {
+        Binding {
+            faceIDLock
+        } set: { newValue in
+            guard newValue else {
+                faceIDLock = false
+                return
+            }
+            guard AppLock.isAvailable else {
+                lockMessage = "Set up Face ID or a passcode in the iPhone's Settings first."
+                return
+            }
+            Task {
+                if await AppLock.authenticate(reason: "Turn on Face ID lock for SpendScan") {
+                    faceIDLock = true
+                } else {
+                    lockMessage = "Face ID didn't confirm, so the lock is still off."
+                }
+            }
+        }
+    }
+
+    private var lockMessageBinding: Binding<Bool> {
+        Binding(get: { lockMessage != nil }, set: { if !$0 { lockMessage = nil } })
     }
 }
 
@@ -108,11 +188,18 @@ enum CSVExport {
             }
         }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("spending.csv")
-        try? lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        // Encrypted while the iPhone is locked.
+        try? Data(lines.joined(separator: "\n").utf8).write(to: url, options: [.atomic, .completeFileProtection])
         return url
     }
 
-    private static func quote(_ text: String) -> String {
-        "\"" + text.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+    /// Quotes a text cell. Text read from a receipt could start with = + - or @, which Excel and
+    /// Numbers would run as a formula, so those cells get a leading apostrophe.
+    static func quote(_ text: String) -> String {
+        var safe = text
+        if let first = safe.first, "=+-@\t\r".contains(first) {
+            safe = "'" + safe
+        }
+        return "\"" + safe.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 }

@@ -10,6 +10,8 @@ extension Color {
     static let bgSurfaceSecondary = Color(light: 0xECEEF2, dark: 0x2C2F34)
     static let textPrimary = Color(light: 0x0E0F11, dark: 0xFFFFFF)
     static let textSecondary = Color(light: 0x6B7280, dark: 0x9AA1AD)
+    /// Text and icons on top of the accent colour (dark text on the bright dark-mode green).
+    static let textOnAccent = Color(light: 0xFFFFFF, dark: 0x0E0F11)
     static let borderDefault = Color(light: 0xE2E5EA, dark: 0x2C2F34)
     static let accentDefault = Color(light: 0x0E8A5F, dark: 0x3DD68C)
     static let accentSubtle = Color(light: 0xDDF5EA, dark: 0x0B3B2A)
@@ -52,7 +54,12 @@ extension SpendCategory {
     }
 
     /// Light background behind category icons and pills (14% in light mode, 20% in dark, as in Figma).
-    var tint: Color { color.opacity(0.16) }
+    var tint: Color {
+        let base = UIColor(color)
+        return Color(uiColor: UIColor { traits in
+            base.resolvedColor(with: traits).withAlphaComponent(traits.userInterfaceStyle == .dark ? 0.20 : 0.14)
+        })
+    }
 }
 
 enum Spacing {

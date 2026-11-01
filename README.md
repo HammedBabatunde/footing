@@ -2,7 +2,21 @@
 
 An iPhone app for tracking spending in the UK. Scan a receipt with the camera, pick a photo, or import a PDF, and SpendScan reads every item and price in pounds, sorts it into Food, Utilities, Health, Transport or Other, and shows what you spend each week, month, quarter and year.
 
-**Everything runs on the iPhone and works with no internet.** Receipts are read with Apple's on-device text recognition (Vision), categorised by on-device AI (Apple Intelligence, with built-in rules as a fallback), and stored only on the phone with SwiftData. The app has no network code and no accounts.
+**Everything runs on the iPhone and works with no internet.** Receipts are read with Apple's on-device text recognition (Vision), categorised by on-device AI (Apple Intelligence, with built-in rules as a fallback), and stored on the phone with SwiftData. No account is needed.
+
+**Optional Notion backup.** In Settings → Notion sync you can connect a Notion page. About once a week, when the app is opened with internet, new receipts (merchant, date, total, VAT, payment, categories and every item) are copied to a "SpendScan receipts" database there. Deleted receipts are moved to Notion's trash. If there's no internet, nothing changes and it tries again next time. This is the only network code in the app, and it only talks to `api.notion.com`.
+
+## Security
+
+- The Notion secret is stored in the iOS Keychain (this device only, not backed up), never in files or settings.
+- Notion requests use HTTPS with an ephemeral session, so nothing is cached on disk.
+- Optional Face ID lock (falls back to the passcode). When it's on, the app is hidden in the app switcher.
+- CSV exports are protected while the iPhone is locked, and text cells are escaped so a receipt can't inject spreadsheet formulas.
+- PDF import is limited to 25 MB and 10 pages, and password-protected PDFs are rejected.
+
+## Appearance
+
+Settings → Appearance switches between Automatic, Light and Dark. Every colour in `DesignSystem/Theme.swift` has a light and a dark value that match the Figma variables.
 
 - Plan: https://claude.ai/artifact/WkQx5kbizbFzseyfJVVanV
 - Designs (Figma): https://www.figma.com/design/Q7kfCzIU5tXDHGyMXVqEMc

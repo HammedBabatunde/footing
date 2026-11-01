@@ -199,6 +199,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = SpendScan;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				INFOPLIST_KEY_NSCameraUsageDescription = "SpendScan uses the camera to scan your receipts. Photos stay on your iPhone.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "SpendScan uses Face ID to keep your spending private.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -231,6 +232,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = SpendScan;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				INFOPLIST_KEY_NSCameraUsageDescription = "SpendScan uses the camera to scan your receipts. Photos stay on your iPhone.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "SpendScan uses Face ID to keep your spending private.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

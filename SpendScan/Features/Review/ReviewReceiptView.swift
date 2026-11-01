@@ -70,13 +70,26 @@ struct ReviewReceiptView: View {
                                 .keyboardType(.numbersAndPunctuation)
                                 .frame(width: 90)
                         }
-                        Picker("Category", selection: $item.category) {
-                            ForEach(SpendCategory.allCases) { Text($0.displayName).tag($0) }
+                        HStack {
+                            Button(role: .destructive) {
+                                items.removeAll { $0.id == item.id }
+                            } label: {
+                                Label("Remove", systemImage: "trash")
+                                    .font(.footnote)
+                            }
+                            .buttonStyle(.borderless)
+                            .tint(Color.statusNegative)
+                            .accessibilityLabel("Remove \(item.name)")
+
+                            Picker("Category", selection: $item.category) {
+                                ForEach(SpendCategory.allCases) { Text($0.displayName).tag($0) }
+                            }
+                            .pickerStyle(.menu)
+                            .font(.footnote)
                         }
-                        .pickerStyle(.menu)
-                        .font(.footnote)
                     }
                 }
+                // Swipe left on an item to delete it, or tap Remove.
                 .onDelete { items.remove(atOffsets: $0) }
 
                 Button("Add item", systemImage: "plus") {

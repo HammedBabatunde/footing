@@ -64,6 +64,37 @@ struct ReceiptParserTests {
         ]
         #expect(parser.rows(from: lines) == ["MILK  1.65", "TOTAL  1.65"])
     }
+
+    @Test func keepsCloseLinesApartWhenTheyOverlapSideways() {
+        // Two items on a slightly tilted photo: close in height, but the names overlap side to side.
+        let lines = [
+            RecognizedLine(text: "344655 Ibuprofen", minX: 0.05, maxX: 0.45, midY: 0.600, height: 0.02),
+            RecognizedLine(text: "1.89", minX: 0.80, maxX: 0.90, midY: 0.598, height: 0.02),
+            RecognizedLine(text: "404824 Mars Bar", minX: 0.05, maxX: 0.42, midY: 0.592, height: 0.02),
+            RecognizedLine(text: "0.95", minX: 0.80, maxX: 0.90, midY: 0.589, height: 0.02)
+        ]
+        #expect(parser.rows(from: lines) == ["344655 Ibuprofen  1.89", "404824 Mars Bar  0.95"])
+    }
+
+    @Test func readsAnAldiReceipt() throws {
+        let text = """
+        ALDI
+        28/10/26 15:21
+        335782 Water Still Spring   1.69 A
+        416713 Milk Semi Skim 6PT   2.40 A
+        339914 Red Onions           0.35 A
+        344655 Ibuprofen            1.89 A
+        404824 Mars Bar             0.95 A
+        Goods                       7.28
+        Total                       7.28
+        Contactless                 7.28
+        """
+        let receipt = parser.parse(text: text)
+        #expect(receipt.items.map(\.name) == ["Water Still Spring", "Milk Semi Skim 6PT", "Red Onions", "Ibuprofen", "Mars Bar"])
+        #expect(receipt.subtotal == Decimal(string: "7.28")!)
+        #expect(receipt.total == Decimal(string: "7.28")!)
+        #expect(receipt.itemsMatchTotal)
+    }
 }
 
 @Suite("Categorising")

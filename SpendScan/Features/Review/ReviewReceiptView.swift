@@ -41,58 +41,68 @@ struct ReviewReceiptView: View {
                 }
             }
 
-            if result.source != .manual && !editedItems && !itemsMatch {
-                Section {
-                    Label("The items add up to \(itemsTotal.gbp), but the total says \(total.gbp). Please check the prices.", systemImage: "exclamationmark.triangle.fill")
-                        .font(.footnote)
-                        .foregroundStyle(Color.statusWarning)
+            Section {
+                LabeledContent("Shop") {
+                    TextField("Name", text: $merchant)
+                        .multilineTextAlignment(.trailing)
                 }
-            }
-
-            Section("Details") {
-                TextField("Merchant", text: $merchant)
                 DatePicker("Date", selection: $date)
-                Picker("Category", selection: $category) {
-                    ForEach(SpendCategory.allCases) { Text($0.displayName).tag($0) }
+                LabeledContent("Category") {
+                    CategoryMenu(selection: $category)
                 }
                 LabeledContent("Total") {
                     PriceField(title: "Total", value: $total)
+                        .fontWeight(.semibold)
+                }
+            } header: {
+                Text("Details")
+            } footer: {
+                if showsMismatch {
+                    // A quiet note, not a warning: often a discount or a line the scan missed.
+                    HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                        Text("Items add up to \(itemsTotal.gbp).")
+                        Button("Use this total") { total = itemsTotal }
+                            .font(.footnote.weight(.semibold))
+                            .buttonStyle(.borderless)
+                            .tint(Color.accentDefault)
+                    }
                 }
             }
 
             Section {
                 ForEach($items) { $item in
                     VStack(alignment: .leading, spacing: Spacing.sm) {
-                        HStack {
-                            TextField("Item", text: $item.name)
-                            PriceField(title: "Price", value: $item.lineTotal, keyboard: .numbersAndPunctuation)
-                                .frame(width: 100)
+                        HStack(alignment: .firstTextBaseline, spacing: Spacing.md) {
+                            TextField("Item name", text: $item.name)
+                            PriceField(title: "0.00", value: $item.lineTotal, keyboard: .numbersAndPunctuation)
                         }
                         HStack {
-                            Button(role: .destructive) {
+                            CategoryMenu(selection: $item.category)
+                            Spacer()
+                            Button {
                                 items.removeAll { $0.id == item.id }
                             } label: {
-                                Label("Remove", systemImage: "trash")
-                                    .font(.footnote)
+                                Image(systemName: "trash")
+                                    .font(.subheadline)
+                                    .foregroundStyle(Color.statusNegative)
+                                    .frame(width: 32, height: 32)
+                                    .contentShape(Rectangle())
                             }
                             .buttonStyle(.borderless)
-                            .tint(Color.statusNegative)
                             .accessibilityLabel("Remove \(item.name)")
-
-                            Picker("Category", selection: $item.category) {
-                                ForEach(SpendCategory.allCases) { Text($0.displayName).tag($0) }
-                            }
-                            .pickerStyle(.menu)
-                            .font(.footnote)
                         }
                     }
+                    .padding(.vertical, Spacing.xs)
+                    // Keep every divider lined up with the text.
+                    .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
                 }
-                // Swipe left on an item to delete it, or tap Remove.
+                // Swipe left on an item to delete it, or tap the bin.
                 .onDelete { items.remove(atOffsets: $0) }
 
                 Button("Add item", systemImage: "plus") {
                     items.append(EditableItem(name: "", lineTotal: 0, category: category))
                 }
+                .tint(Color.accentDefault)
             } header: {
                 Text("Items (\(items.count))")
             } footer: {
@@ -112,13 +122,16 @@ struct ReviewReceiptView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("Save", action: save).disabled(merchant.isEmpty)
+                Button("Save", action: save)
+                    .fontWeight(.semibold)
+                    .disabled(merchant.isEmpty)
             }
         }
     }
 
     private var itemsTotal: Decimal { items.reduce(0) { $0 + $1.lineTotal } }
     private var itemsMatch: Bool { items.isEmpty || itemsTotal == total }
+    private var showsMismatch: Bool { result.source != .manual && !editedItems && !itemsMatch }
 
     private func save() {
         let receipt = Receipt(merchantName: merchant, purchaseDate: date, total: total, category: category, source: result.source)

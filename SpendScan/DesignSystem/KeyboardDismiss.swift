@@ -60,13 +60,21 @@ struct PriceField: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        HStack(spacing: 2) {
+        // The £ sits right next to the number, and the field grows with what you type.
+        HStack(spacing: 1) {
             Text("£").foregroundStyle(Color.textSecondary)
             TextField(title, text: $text)
                 .keyboardType(keyboard)
                 .multilineTextAlignment(.trailing)
                 .focused($isFocused)
+                .fixedSize()
         }
+        .monospacedDigit()
+        // The whole price, £ included, is easy to tap.
+        .padding(.vertical, Spacing.xs)
+        .padding(.leading, Spacing.md)
+        .contentShape(Rectangle())
+        .onTapGesture { isFocused = true }
         .onAppear { text = Self.format(value) }
         .onChange(of: text) { _, newText in
             let cleaned = newText.replacingOccurrences(of: "£", with: "").replacingOccurrences(of: ",", with: "")

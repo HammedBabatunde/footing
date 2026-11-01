@@ -95,6 +95,17 @@ struct ReceiptParserTests {
         #expect(receipt.total == Decimal(string: "7.28")!)
         #expect(receipt.itemsMatchTotal)
     }
+
+    @Test func dropsAProductCodeAfterTheName() throws {
+        let text = """
+        LIDL
+        Speciality Blonde Be 0083184   2.25 A
+        Spaghetti                      1.50 A
+        Total                          3.75
+        """
+        let receipt = parser.parse(text: text)
+        #expect(receipt.items.map(\.name) == ["Speciality Blonde Be", "Spaghetti"])
+    }
 }
 
 @Suite("Categorising")

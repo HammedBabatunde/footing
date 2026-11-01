@@ -33,6 +33,35 @@ struct CategoryPill: View {
     }
 }
 
+/// A category pill you can tap to pick another category.
+struct CategoryMenu: View {
+    @Binding var selection: SpendCategory
+
+    var body: some View {
+        Menu {
+            Picker("Category", selection: $selection) {
+                ForEach(SpendCategory.allCases) { category in
+                    Label(category.displayName, systemImage: category.symbolName).tag(category)
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Circle().fill(selection.color).frame(width: 8, height: 8)
+                Text(selection.displayName)
+                    .font(.footnote.weight(.medium))
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2.weight(.semibold))
+            }
+            .foregroundStyle(selection.color)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, 6)
+            .background(selection.tint, in: Capsule())
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel("Category: \(selection.displayName)")
+    }
+}
+
 /// Large money figure with smaller pence (Figma: Amount).
 struct AmountText: View {
     let amount: Decimal

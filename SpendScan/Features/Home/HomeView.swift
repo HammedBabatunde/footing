@@ -37,6 +37,14 @@ struct HomeView: View {
                 .padding(.bottom, 100)
             }
             .background(Color.bgPrimary)
+            // Home has no navigation bar, so cover the status bar area. Otherwise the greeting
+            // scrolls up underneath the clock and battery.
+            .overlay(alignment: .top) {
+                Color.bgPrimary
+                    .frame(height: 0)
+                    .background(Color.bgPrimary.ignoresSafeArea(edges: .top))
+            }
+            .toolbar(.hidden, for: .navigationBar)
             .overlay(alignment: .bottomTrailing) { scanButton }
             .sheet(isPresented: $showAddReceipt) { AddReceiptSheet() }
             .navigationDestination(for: Receipt.self) { ReceiptDetailView(receipt: $0) }
@@ -81,6 +89,11 @@ struct HomeView: View {
     private var categoryCard: some View {
         Card {
             Text("Where it went").font(.title3.bold()).foregroundStyle(Color.textPrimary)
+            if monthByCategory.isEmpty {
+                Text("Nothing spent yet this month. Scan a receipt and it will show here.")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.textSecondary)
+            } else {
             HStack(spacing: 20) {
                 Chart(monthByCategory) { row in
                     SectorMark(angle: .value("Spent", row.doubleValue), innerRadius: .ratio(0.62), angularInset: 1.5)
@@ -107,6 +120,7 @@ struct HomeView: View {
                         }
                     }
                 }
+            }
             }
         }
     }

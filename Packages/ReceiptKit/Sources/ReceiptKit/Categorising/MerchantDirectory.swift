@@ -39,7 +39,8 @@ public struct MerchantDirectory: Sendable {
         Entry(name: "Sainsbury's", aliases: ["Sainsburys"], category: .food),
         Entry(name: "Asda", category: .food),
         Entry(name: "Aldi", category: .food),
-        Entry(name: "Lidl", category: .food),
+        // The Lidl logo often reads as "LiDE" or "LIDI".
+        Entry(name: "Lidl", aliases: ["LiDE", "LIDI"], category: .food),
         Entry(name: "Morrisons", category: .food),
         Entry(name: "Waitrose", category: .food),
         Entry(name: "Co-op", aliases: ["Coop", "Co-operative"], category: .food),

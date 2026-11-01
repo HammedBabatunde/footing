@@ -233,7 +233,9 @@ struct ChangeLabel: View {
     let text: (Int, Bool) -> String
 
     var body: some View {
-        if previous > 0 {
+        // Only compare once there is spending in this period too. "100% less" on the 1st of
+        // the month isn't useful.
+        if previous > 0 && current > 0 {
             let change = NSDecimalNumber(decimal: (current - previous) / previous * 100).doubleValue
             let isDown = change <= 0
             HStack(spacing: 4) {

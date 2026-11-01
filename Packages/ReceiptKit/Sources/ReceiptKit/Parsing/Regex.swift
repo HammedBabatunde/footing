@@ -18,4 +18,11 @@ enum RX {
     static func matches(_ pattern: String, _ text: String, caseInsensitive: Bool = true) -> Bool {
         firstMatch(pattern, in: text, caseInsensitive: caseInsensitive) != nil
     }
+
+    static func replace(_ pattern: String, in text: String, with template: String, caseInsensitive: Bool = true) -> String {
+        let options: NSRegularExpression.Options = caseInsensitive ? [.caseInsensitive] : []
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: options) else { return text }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: template)
+    }
 }

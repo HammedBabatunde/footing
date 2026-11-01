@@ -19,8 +19,7 @@ public struct ReceiptParser: Sendable {
         let sorted = lines.sorted { $0.midY > $1.midY }
         var rows: [[RecognizedLine]] = []
         for line in sorted {
-            if let last = rows.last, let anchor = last.first,
-               abs(anchor.midY - line.midY) < max(anchor.height, line.height) * 0.5 {
+            if let last = rows.last, belongs(line, to: last) {
                 rows[rows.count - 1].append(line)
             } else {
                 rows.append([line])
@@ -29,6 +28,16 @@ public struct ReceiptParser: Sendable {
         return rows.map { row in
             row.sorted { $0.minX < $1.minX }.map(\.text).joined(separator: "  ")
         }
+    }
+
+    /// A line joins a row when it sits at the same height and doesn't overlap any text already in
+    /// the row. Two boxes that overlap side to side can't be on the same printed line, so a slightly
+    /// tilted photo no longer merges two items (and loses one price).
+    private func belongs(_ line: RecognizedLine, to row: [RecognizedLine]) -> Bool {
+        let rowMidY = row.map(\.midY).reduce(0, +) / Double(row.count)
+        let rowHeight = row.map(\.height).max() ?? line.height
+        guard abs(rowMidY - line.midY) < max(rowHeight, line.height) * 0.5 else { return false }
+        return !row.contains { $0.minX < line.maxX && line.minX < $0.maxX }
     }
 
     public func parse(lines: [RecognizedLine]) -> ParsedReceipt {
@@ -97,7 +106,8 @@ public struct ReceiptParser: Sendable {
     }
 
     private func makeItem(label: String, amount: Decimal, pendingName: String?) -> ParsedLineItem? {
-        var name = label
+        // Aldi, Lidl and others print a product code before the name: "335782 Water Still Spring".
+        var name = RX.replace(#"^\d{4,}\s+"#, in: label, with: "")
         var quantity = 1
 
         // "2 x £1.50" or "2 @ 1.50" printed on its own row under the item name.
@@ -126,6 +136,8 @@ public struct ReceiptParser: Sendable {
 
     private func isSubtotal(_ lower: String) -> Bool {
         lower.contains("subtotal") || lower.contains("sub-total") || lower.contains("sub total")
+            // Aldi prints "Goods" for the sum of the items before any discounts.
+            || RX.matches(#"^goods\b"#, lower)
     }
 
     private func isTotal(_ lower: String) -> Bool {

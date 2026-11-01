@@ -70,13 +70,26 @@ struct ReviewReceiptView: View {
                                 .keyboardType(.numbersAndPunctuation)
                                 .frame(width: 90)
                         }
-                        Picker("Category", selection: $item.category) {
-                            ForEach(SpendCategory.allCases) { Text($0.displayName).tag($0) }
+                        HStack {
+                            Button(role: .destructive) {
+                                items.removeAll { $0.id == item.id }
+                            } label: {
+                                Label("Remove", systemImage: "trash")
+                                    .font(.footnote)
+                            }
+                            .buttonStyle(.borderless)
+                            .tint(Color.statusNegative)
+                            .accessibilityLabel("Remove \(item.name)")
+
+                            Picker("Category", selection: $item.category) {
+                                ForEach(SpendCategory.allCases) { Text($0.displayName).tag($0) }
+                            }
+                            .pickerStyle(.menu)
+                            .font(.footnote)
                         }
-                        .pickerStyle(.menu)
-                        .font(.footnote)
                     }
                 }
+                // Swipe left on an item to delete it, or tap Remove.
                 .onDelete { items.remove(atOffsets: $0) }
 
                 Button("Add item", systemImage: "plus") {
@@ -89,6 +102,11 @@ struct ReviewReceiptView: View {
                     Label("Categories picked on your iPhone by \(result.engine). Tap any category to change it.", systemImage: "sparkles")
                 }
             }
+        }
+        // When you change a price, add or remove an item, the total follows the items.
+        // You can still type a different total afterwards.
+        .onChange(of: items.map(\.lineTotal)) { _, _ in
+            total = itemsTotal
         }
         .navigationTitle("Review receipt")
         .navigationBarTitleDisplayMode(.inline)

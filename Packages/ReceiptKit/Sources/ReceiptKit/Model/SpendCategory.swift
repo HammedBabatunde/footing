@@ -25,7 +25,7 @@ public enum SpendCategory: String, CaseIterable, Codable, Sendable, Identifiable
         switch self {
         case .food: "basket"
         case .utilities: "bolt"
-        case .health: "cross.case"
+        case .health: "cross"
         case .transport: "bus"
         case .other: "ellipsis"
         }

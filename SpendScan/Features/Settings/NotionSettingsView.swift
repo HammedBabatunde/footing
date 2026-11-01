@@ -23,6 +23,7 @@ struct NotionSettingsView: View {
                 setupSections
             }
         }
+        .themedList()
         .navigationTitle("Notion sync")
         .navigationBarTitleDisplayMode(.inline)
     }

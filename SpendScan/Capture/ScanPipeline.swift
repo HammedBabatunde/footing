@@ -36,7 +36,7 @@ final class ScanPipeline {
 
     func process(pdfAt url: URL, settings: CategorisationSettings) async {
         guard let output = PDFTextExtractor.load(url) else {
-            errorMessage = "That PDF couldn't be opened."
+            errorMessage = "That PDF couldn't be opened. It may be password-protected or larger than 25 MB."
             return
         }
         await run(source: .pdf, imageData: output.pageImages.first?.jpegData(compressionQuality: 0.7), settings: settings) {

@@ -22,6 +22,9 @@ final class Receipt {
     @Attribute(.externalStorage) var imageData: Data?
     var rawText: String = ""
     var createdAt: Date = Date()
+    /// Set once this receipt has been copied to Notion. Nil means it still needs syncing.
+    var notionPageID: String?
+    var notionSyncedAt: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \LineItem.receipt)
     var items: [LineItem] = []

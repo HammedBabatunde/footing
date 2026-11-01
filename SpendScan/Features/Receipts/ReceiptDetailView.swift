@@ -62,6 +62,7 @@ struct ReceiptDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog("Delete this receipt?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
+                NotionSync.receiptWillBeDeleted(receipt)
                 modelContext.delete(receipt)
                 dismiss()
             }

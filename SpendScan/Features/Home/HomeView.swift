@@ -111,7 +111,7 @@ struct HomeView: View {
         Button { showAddReceipt = true } label: {
             Image(systemName: "viewfinder")
                 .font(.title.weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Color.textOnAccent)
                 .frame(width: 64, height: 64)
                 .background(Color.accentDefault, in: Circle())
                 .shadow(color: Color.accentDefault.opacity(0.35), radius: 12, y: 6)

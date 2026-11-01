@@ -103,6 +103,11 @@ struct ReviewReceiptView: View {
                 }
             }
         }
+        // When you change a price, add or remove an item, the total follows the items.
+        // You can still type a different total afterwards.
+        .onChange(of: items.map(\.lineTotal)) { _, _ in
+            total = itemsTotal
+        }
         .navigationTitle("Review receipt")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

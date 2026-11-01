@@ -15,6 +15,8 @@ struct ReviewReceiptView: View {
     @State private var total: Decimal
     @State private var category: SpendCategory
     @State private var items: [EditableItem]
+    /// Once you change the items, the total follows them and the mismatch warning goes away.
+    @State private var editedItems = false
 
     init(result: ScanResult, onSaved: @escaping () -> Void) {
         self.result = result
@@ -39,7 +41,7 @@ struct ReviewReceiptView: View {
                 }
             }
 
-            if result.source != .manual && !itemsMatch {
+            if result.source != .manual && !editedItems && !itemsMatch {
                 Section {
                     Label("The items add up to \(itemsTotal.gbp), but the total says \(total.gbp). Please check the prices.", systemImage: "exclamationmark.triangle.fill")
                         .font(.footnote)
@@ -54,9 +56,7 @@ struct ReviewReceiptView: View {
                     ForEach(SpendCategory.allCases) { Text($0.displayName).tag($0) }
                 }
                 LabeledContent("Total") {
-                    TextField("Total", value: $total, format: .currency(code: "GBP"))
-                        .multilineTextAlignment(.trailing)
-                        .keyboardType(.decimalPad)
+                    PriceField(title: "Total", value: $total)
                 }
             }
 
@@ -65,10 +65,8 @@ struct ReviewReceiptView: View {
                     VStack(alignment: .leading, spacing: Spacing.sm) {
                         HStack {
                             TextField("Item", text: $item.name)
-                            TextField("Price", value: $item.lineTotal, format: .currency(code: "GBP"))
-                                .multilineTextAlignment(.trailing)
-                                .keyboardType(.numbersAndPunctuation)
-                                .frame(width: 90)
+                            PriceField(title: "Price", value: $item.lineTotal, keyboard: .numbersAndPunctuation)
+                                .frame(width: 100)
                         }
                         HStack {
                             Button(role: .destructive) {
@@ -106,8 +104,10 @@ struct ReviewReceiptView: View {
         // When you change a price, add or remove an item, the total follows the items.
         // You can still type a different total afterwards.
         .onChange(of: items.map(\.lineTotal)) { _, _ in
+            editedItems = true
             total = itemsTotal
         }
+        .scrollDismissesKeyboard(.interactively)
         .navigationTitle("Review receipt")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

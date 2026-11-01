@@ -9,6 +9,7 @@ struct SpendScanApp: App {
         WindowGroup {
             RootTabView()
                 .appLock()
+                .dismissesKeyboardOnTap()
                 .preferredColorScheme(appearance.colorScheme)
         }
         // Receipts are stored on this iPhone. The only network use is the optional weekly copy to

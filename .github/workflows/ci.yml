@@ -42,13 +42,6 @@ jobs:
           xcodebuild -version
       - name: Build for the iOS Simulator (no signing needed)
         run: |
-          set -o pipefail
-          xcodebuild build \
-            -project SpendScan.xcodeproj \
-            -scheme SpendScan \
-            -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO \
-            | grep -E "error:|warning: .*deprecated|BUILD (SUCCEEDED|FAILED)" || true
           xcodebuild build \
             -project SpendScan.xcodeproj \
             -scheme SpendScan \

@@ -10,7 +10,12 @@ struct AddReceiptSheet: View {
     @AppStorage(SettingsKeys.aiCategorisation) private var aiEnabled = true
 
     @State private var pipeline = ScanPipeline()
-    @State private var photoItem: PhotosPickerItem?
+    @Environment(\.modelContext) private var modelContext
+    @AppStorage(SettingsKeys.learnFromCorrections) private var learnFromCorrections = true
+    @State private var photoItems: [PhotosPickerItem] = []
+    /// Several pages or photos waiting for you to say whether they are separate receipts.
+    @State private var pendingImages: [UIImage] = []
+    @State private var pendingSource: ReceiptSource = .camera
     @State private var showScanner = false
     @State private var showPDFImporter = false
 
@@ -36,7 +41,7 @@ struct AddReceiptSheet: View {
                         }
                         .disabled(!DocumentScannerView.isSupported)
 
-                        PhotosPicker(selection: $photoItem, matching: .images) {
+                        PhotosPicker(selection: $photoItems, maxSelectionCount: 10, matching: .images) {
                             option("Choose from Photos", "Use a photo you already took", "photo")
                         }
 
@@ -61,8 +66,24 @@ struct AddReceiptSheet: View {
             } message: {
                 Text(pipeline.errorMessage ?? "")
             }
-            .navigationDestination(item: $pipeline.result) { result in
-                ReviewReceiptView(result: result, onCancel: { dismiss() }) { dismiss() }
+            .navigationDestination(isPresented: $pipeline.reviewing) {
+                if pipeline.drafts.count == 1 {
+                    ReviewReceiptView(draft: $pipeline.drafts[0], onCancel: { dismiss() }) {
+                        pipeline.drafts[0].save(into: modelContext, learn: learnFromCorrections)
+                        dismiss()
+                    }
+                } else {
+                    MultipleReceiptsView(drafts: $pipeline.drafts, notice: pipeline.notice, onCancel: { dismiss() }) {
+                        dismiss()
+                    }
+                }
+            }
+            .confirmationDialog(pendingTitle, isPresented: pendingBinding, titleVisibility: .visible) {
+                Button("\(pendingImages.count) separate receipts") { readPending(separate: true) }
+                Button("One long receipt") { readPending(separate: false) }
+                Button("Cancel", role: .cancel) { pendingImages = [] }
+            } message: {
+                Text("Each receipt can be checked and edited on its own before saving.")
             }
         }
         .overlay {
@@ -76,17 +97,17 @@ struct AddReceiptSheet: View {
         .presentationDragIndicator(.visible)
         .presentationCornerRadius(24)
         .presentationBackground(Color.bgPrimary)
-        .interactiveDismissDisabled(pipeline.isWorking || pipeline.result != nil)
+        .interactiveDismissDisabled(pipeline.isWorking || pipeline.reviewing)
         .onChange(of: pipeline.isWorking) { _, working in
             if working { detent = .large }
         }
-        .onChange(of: pipeline.result) { _, result in
-            if result != nil { detent = .large }
+        .onChange(of: pipeline.reviewing) { _, reviewing in
+            if reviewing { detent = .large }
         }
         .fullScreenCover(isPresented: $showScanner) {
             DocumentScannerView { images in
                 showScanner = false
-                Task { await pipeline.process(images: images, source: .camera, settings: settings) }
+                received(images, from: .camera)
             } onCancel: {
                 showScanner = false
             }
@@ -97,16 +118,46 @@ struct AddReceiptSheet: View {
                 Task { await pipeline.process(pdfAt: url, settings: settings) }
             }
         }
-        .onChange(of: photoItem) { _, item in
-            guard let item else { return }
+        .onChange(of: photoItems) { _, items in
+            guard !items.isEmpty else { return }
             Task {
-                if let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) {
-                    await pipeline.process(images: [image], source: .photo, settings: settings)
+                var images: [UIImage] = []
+                for item in items {
+                    if let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) {
+                        images.append(image)
+                    }
                 }
-                photoItem = nil
+                photoItems = []
+                received(images, from: .photo)
             }
         }
     }
+
+    /// One image is read straight away. Several: ask whether they are separate receipts first.
+    private func received(_ images: [UIImage], from source: ReceiptSource) {
+        guard !images.isEmpty else { return }
+        if images.count == 1 {
+            Task { await pipeline.process(images: images, source: source, separate: true, settings: settings) }
+        } else {
+            pendingSource = source
+            pendingImages = images
+        }
+    }
+
+    private func readPending(separate: Bool) {
+        let images = pendingImages
+        pendingImages = []
+        Task { await pipeline.process(images: images, source: pendingSource, separate: separate, settings: settings) }
+    }
+
+    private var pendingTitle: String {
+        "You added \(pendingImages.count) \(pendingSource == .camera ? "pages" : "photos")"
+    }
+
+    private var pendingBinding: Binding<Bool> {
+        Binding(get: { !pendingImages.isEmpty }, set: { if !$0 { pendingImages = [] } })
+    }
+
 
     private var settings: CategorisationSettings {
         CategorisationSettings(aiEnabled: aiEnabled, userRules: userRules.map(\.rule))
@@ -160,8 +211,10 @@ struct ReadingReceiptView: View {
             receiptPaper
                 .padding(.bottom, Spacing.xxl)
 
-            Text("Reading your receipt…")
+            Text(pipeline.receiptCount > 1 ? "Reading receipt \(pipeline.receiptNumber) of \(pipeline.receiptCount)…" : "Reading your receipt…")
                 .font(.title2.bold())
+                .contentTransition(.numericText())
+                .animation(.default, value: pipeline.receiptNumber)
                 .foregroundStyle(Color.textPrimary)
             Text("Works offline. Nothing leaves your iPhone.")
                 .font(.subheadline)

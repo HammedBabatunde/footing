@@ -28,7 +28,16 @@ final class ScanPipeline {
     /// e.g. "Found 6 items and a total of £18.49", once the receipt has been read.
     var foundSummary: String?
     var errorMessage: String?
-    var result: ScanResult?
+    /// Receipts read and ready to check. One for a normal scan, several when you scan
+    /// several receipts at once.
+    var drafts: [ReceiptDraft] = []
+    /// True once there is something to review, which opens the review screen.
+    var reviewing = false
+    /// "Receipt 2 of 3" while reading several.
+    var receiptNumber = 1
+    var receiptCount = 1
+    /// e.g. "1 page couldn't be read and was skipped."
+    var notice: String?
     /// Set when you tap Cancel on the reading screen, so the finished scan is thrown away.
     private var cancelled = false
 
@@ -47,15 +56,20 @@ final class ScanPipeline {
 
     private let parser = ReceiptParser()
 
-    func process(images: [UIImage], source: ReceiptSource, settings: CategorisationSettings) async {
-        await run(source: source, imageData: images.first?.jpegData(compressionQuality: 0.7), settings: settings) {
-            var rows: [String] = []
-            for image in images {
-                let lines = try await TextRecognizer.lines(in: image)
-                rows += self.parser.rows(from: lines)
+    /// Reads scanned pages or photos. `separate` = each image is its own receipt;
+    /// otherwise all of them are pages of one long receipt.
+    func process(images: [UIImage], source: ReceiptSource, separate: Bool, settings: CategorisationSettings) async {
+        let groups: [[UIImage]] = separate ? images.map { [$0] } : [images]
+        let jobs = groups.map { pages in
+            Job(imageData: pages.first?.jpegData(compressionQuality: 0.7)) {
+                var rows: [String] = []
+                for page in pages {
+                    rows += self.parser.rows(from: try await TextRecognizer.lines(in: page))
+                }
+                return rows
             }
-            return rows
         }
+        await run(jobs, source: source, settings: settings)
     }
 
     func process(pdfAt url: URL, settings: CategorisationSettings) async {
@@ -63,57 +77,84 @@ final class ScanPipeline {
             errorMessage = "That PDF couldn't be opened. It may be password-protected or larger than 25 MB."
             return
         }
-        await run(source: .pdf, imageData: output.pageImages.first?.jpegData(compressionQuality: 0.7), settings: settings) {
+        let job = Job(imageData: output.pageImages.first?.jpegData(compressionQuality: 0.7)) {
             var rows = output.rows
             for image in output.pageImages {
                 rows += self.parser.rows(from: try await TextRecognizer.lines(in: image))
             }
             return rows
         }
+        await run([job], source: .pdf, settings: settings)
     }
 
     /// Starts an empty receipt for cash spends.
     func startManual() {
-        result = ScanResult(parsed: ParsedReceipt(purchaseDate: Date()), engine: "Manual", imageData: nil, source: .manual)
+        let result = ScanResult(parsed: ParsedReceipt(purchaseDate: Date()), engine: "Manual", imageData: nil, source: .manual)
+        drafts = [ReceiptDraft(result)]
+        reviewing = true
     }
 
-    private func run(source: ReceiptSource, imageData: Data?, settings: CategorisationSettings, readRows: () async throws -> [String]) async {
+    private struct Job {
+        var imageData: Data?
+        var readRows: () async throws -> [String]
+    }
+
+    private func run(_ jobs: [Job], source: ReceiptSource, settings: CategorisationSettings) async {
         isWorking = true
         cancelled = false
-        stage = .readingText
-        foundSummary = nil
         errorMessage = nil
+        notice = nil
+        receiptCount = jobs.count
         let started = Date()
         defer { isWorking = false }
-        do {
-            let rows = try await readRows()
+
+        let categoriser = Categoriser(
+            userRules: settings.userRules,
+            aiEngines: settings.aiEnabled ? CategoryEngines.available() : []
+        )
+        var results: [ReceiptDraft] = []
+        var skipped = 0
+
+        for (index, job) in jobs.enumerated() {
             guard !cancelled else { return }
-            guard !rows.isEmpty else {
-                errorMessage = "No text was found. Try again with the whole receipt in view and good light."
-                return
+            receiptNumber = index + 1
+            stage = .readingText
+            foundSummary = nil
+            do {
+                let rows = try await job.readRows()
+                guard !cancelled else { return }
+                guard !rows.isEmpty else {
+                    skipped += 1
+                    continue
+                }
+                stage = .findingItems
+                let parsed = parser.parse(rows: rows)
+                let count = parsed.items.count
+                let total = parsed.total ?? parsed.itemsTotal
+                foundSummary = "Found \(count) item\(count == 1 ? "" : "s") and a total of \(total.gbp)"
+
+                stage = .choosingCategories
+                let (categorised, engine) = await categoriser.categorise(parsed)
+                results.append(ReceiptDraft(ScanResult(parsed: categorised, engine: engine, imageData: job.imageData, source: source)))
+            } catch {
+                skipped += 1
             }
-            stage = .findingItems
-            let parsed = parser.parse(rows: rows)
-            let count = parsed.items.count
-            let total = parsed.total ?? parsed.itemsTotal
-            foundSummary = "Found \(count) item\(count == 1 ? "" : "s") and a total of \(total.gbp)"
-
-            stage = .choosingCategories
-            let categoriser = Categoriser(
-                userRules: settings.userRules,
-                aiEngines: settings.aiEnabled ? CategoryEngines.available() : []
-            )
-            let (categorised, engine) = await categoriser.categorise(parsed)
-
-            // Reading is often instant. Keep the screen up long enough to see each step.
-            let shown = Date().timeIntervalSince(started)
-            if shown < 1.4 { try? await Task.sleep(for: .seconds(1.4 - shown)) }
-            guard !cancelled else { return }
-            result = ScanResult(parsed: categorised, engine: engine, imageData: imageData, source: source)
-        } catch {
-            guard !cancelled else { return }
-            errorMessage = "The receipt couldn't be read: \(error.localizedDescription)"
         }
+
+        // Reading is often instant. Keep the screen up long enough to see each step.
+        let shown = Date().timeIntervalSince(started)
+        if shown < 1.4 { try? await Task.sleep(for: .seconds(1.4 - shown)) }
+        guard !cancelled else { return }
+
+        if results.isEmpty {
+            errorMessage = "No text was found. Try again with the whole receipt in view and good light."
+            return
+        }
+        if skipped > 0 {
+            notice = skipped == 1 ? "1 page couldn't be read and was skipped." : "\(skipped) pages couldn't be read and were skipped."
+        }
+        drafts = results
+        reviewing = true
     }
 }
 

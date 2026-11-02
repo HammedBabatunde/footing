@@ -9,6 +9,7 @@ enum SettingsKeys {
     static let faceIDLock = "faceIDLock"
     static let appearance = "appearance"
     static let userName = "userName"
+    static let keepReceiptPhotos = "keepReceiptPhotos"
 }
 
 /// Light, dark, or follow the iPhone. Every colour in Theme.swift has a light and a dark value.
@@ -52,6 +53,12 @@ struct SettingsView: View {
     @State private var showBackupExporter = false
     @State private var showRestoreImporter = false
     @State private var backupMessage: String?
+    @AppStorage(SettingsKeys.keepReceiptPhotos) private var keepPhotos = true
+    @State private var shrinking = false
+    @State private var confirmRemovePhotos = false
+    @State private var storageMessage: String?
+    @State private var photoBytes = 0
+    @State private var photoCount = 0
 
     var body: some View {
         NavigationStack {
@@ -123,6 +130,26 @@ struct SettingsView: View {
                     Text("Deleting the app deletes its receipts. Back up to a file in Files or iCloud Drive to keep a copy you can restore, with no internet needed. \(lastBackupText) Notion sync also copies receipts about once a week when you're online.")
                 }
 
+                Section {
+                    LabeledContent("Receipt photos", value: photosSizeText)
+                    Toggle("Keep receipt photos", isOn: $keepPhotos)
+                    Button {
+                        Task { await shrinkPhotos() }
+                    } label: {
+                        HStack {
+                            Text(shrinking ? "Shrinking photos…" : "Shrink saved photos")
+                            if shrinking { Spacer(); ProgressView() }
+                        }
+                    }
+                    .disabled(shrinking || photoBytes == 0)
+                    Button("Remove all receipt photos", role: .destructive) { confirmRemovePhotos = true }
+                        .disabled(shrinking || photoBytes == 0)
+                } header: {
+                    Text("Storage")
+                } footer: {
+                    Text("New photos are saved smaller automatically. Shrink saved photos to make older ones smaller too; they stay easy to read. With Keep receipt photos off, only the items and totals are saved.")
+                }
+
                 Section("Privacy and data") {
                     Toggle("Lock with Face ID", isOn: faceIDBinding)
                     ShareLink(item: CSVExport.file(for: receipts), preview: SharePreview("Spending export")) {
@@ -168,6 +195,18 @@ struct SettingsView: View {
             } message: {
                 Text(backupMessage ?? "")
             }
+            .confirmationDialog("Remove all receipt photos?", isPresented: $confirmRemovePhotos, titleVisibility: .visible) {
+                Button("Remove photos", role: .destructive) { removeAllPhotos() }
+            } message: {
+                Text("Your receipts, items and totals stay. Only the pictures are deleted, and this can't be undone.")
+            }
+            .onAppear { measurePhotos() }
+            .onChange(of: receipts.count) { _, _ in measurePhotos() }
+            .alert("Storage", isPresented: storageMessageBinding) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(storageMessage ?? "")
+            }
             .confirmationDialog("Delete all receipts?", isPresented: $confirmDeleteAll, titleVisibility: .visible) {
                 Button("Delete all", role: .destructive) {
                     for receipt in receipts {
@@ -183,6 +222,56 @@ struct SettingsView: View {
 }
 
 extension SettingsView {
+    /// Adds up photo sizes. Done once when Settings opens and after changes,
+    /// because reading every photo on each redraw would be slow.
+    private func measurePhotos() {
+        var bytes = 0
+        var count = 0
+        for receipt in receipts {
+            if let size = receipt.imageData?.count {
+                bytes += size
+                count += 1
+            }
+        }
+        photoBytes = bytes
+        photoCount = count
+    }
+
+    private var photosSizeText: String {
+        guard photoCount > 0 else { return "None" }
+        return "\(photoCount) · \(Int64(photoBytes).formatted(.byteCount(style: .file)))"
+    }
+
+    private var storageMessageBinding: Binding<Bool> {
+        Binding(get: { storageMessage != nil }, set: { if !$0 { storageMessage = nil } })
+    }
+
+    /// Re-saves older full-size photos at the smaller size, one at a time off the main thread.
+    private func shrinkPhotos() async {
+        shrinking = true
+        defer { shrinking = false }
+        let before = photoBytes
+        for receipt in receipts {
+            guard let data = receipt.imageData else { continue }
+            let smaller = await Task.detached(priority: .userInitiated) { ReceiptImage.shrink(data) }.value
+            if let smaller { receipt.imageData = smaller }
+        }
+        try? modelContext.save()
+        measurePhotos()
+        let saved = max(before - photoBytes, 0)
+        storageMessage = saved > 0
+            ? "Done. Freed \(Int64(saved).formatted(.byteCount(style: .file)))."
+            : "Your photos are already small."
+    }
+
+    private func removeAllPhotos() {
+        let before = photoBytes
+        for receipt in receipts { receipt.imageData = nil }
+        try? modelContext.save()
+        measurePhotos()
+        storageMessage = "Removed photos and freed \(Int64(before).formatted(.byteCount(style: .file)))."
+    }
+
     private var lastBackupText: String {
         guard lastBackupAt > 0 else { return "You haven't made a backup yet." }
         let date = Date(timeIntervalSince1970: lastBackupAt)

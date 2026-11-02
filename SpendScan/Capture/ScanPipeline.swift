@@ -61,7 +61,7 @@ final class ScanPipeline {
     func process(images: [UIImage], source: ReceiptSource, separate: Bool, settings: CategorisationSettings) async {
         let groups: [[UIImage]] = separate ? images.map { [$0] } : [images]
         let jobs = groups.map { pages in
-            Job(imageData: pages.first?.jpegData(compressionQuality: 0.7)) {
+            Job(imageData: ReceiptImage.dataForSaving(pages.first)) {
                 var rows: [String] = []
                 for page in pages {
                     rows += self.parser.rows(from: try await TextRecognizer.lines(in: page))
@@ -77,7 +77,7 @@ final class ScanPipeline {
             errorMessage = "That PDF couldn't be opened. It may be password-protected or larger than 25 MB."
             return
         }
-        let job = Job(imageData: output.pageImages.first?.jpegData(compressionQuality: 0.7)) {
+        let job = Job(imageData: ReceiptImage.dataForSaving(output.pageImages.first)) {
             var rows = output.rows
             for image in output.pageImages {
                 rows += self.parser.rows(from: try await TextRecognizer.lines(in: image))

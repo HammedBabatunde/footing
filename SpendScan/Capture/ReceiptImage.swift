@@ -3,12 +3,13 @@ import ImageIO
 import UniformTypeIdentifiers
 
 /// Receipt photos are only for looking back at, so they don't need the camera's full 12 MP.
-/// We keep the long side at 1600 px (still sharp enough to read every line when zoomed)
-/// and save as HEIC, which is about half the size of JPEG for the same quality.
-/// A typical receipt goes from 2 to 4 MB down to around 150 to 300 KB.
+/// We cap each photo at about 2.5 million pixels, whatever its shape, so a long supermarket
+/// receipt keeps enough width for its small print to stay readable. Then we save it as HEIC,
+/// which is about half the size of JPEG for the same quality.
+/// A typical receipt goes from 2 to 4 MB down to around 200 to 400 KB.
 /// Text is still read from the full-size image before it's shrunk.
 enum ReceiptImage {
-    static let maxLongSide: CGFloat = 1600
+    static let maxPixels: CGFloat = 2_500_000
     static let quality: CGFloat = 0.6
     /// Photos smaller than this were already shrunk, so we leave them alone.
     static let alreadySmall = 450_000
@@ -51,10 +52,11 @@ enum ReceiptImage {
     }
 
     private static func downscaled(_ image: UIImage) -> UIImage {
-        let size = image.size
-        let longSide = max(size.width, size.height)
-        guard longSide > maxLongSide else { return image }
-        let factor = maxLongSide / longSide
+        // Work in real pixels: a UIImage's size is in points.
+        let size = CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
+        let pixels = size.width * size.height
+        guard pixels > maxPixels else { return image }
+        let factor = (maxPixels / pixels).squareRoot()
         let target = CGSize(width: (size.width * factor).rounded(), height: (size.height * factor).rounded())
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1

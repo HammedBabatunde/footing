@@ -11,6 +11,8 @@ struct SpendScanApp: App {
         WindowGroup {
             ZStack {
                 RootTabView()
+                    // No scroll bars anywhere in the app; lists and pages still scroll.
+                    .scrollIndicators(.hidden)
                     .appLock()
                     .dismissesKeyboardOnTap()
                 if showSplash {

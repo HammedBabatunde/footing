@@ -4,7 +4,11 @@ import ReceiptKit
 
 /// A scanned receipt being checked before it is saved. One per receipt, so several
 /// scanned at once can each be edited on their own and then saved together.
-struct ReceiptDraft: Identifiable, Hashable {
+///
+/// Deliberately not Equatable. ScanPipeline is @Observable, and it skips redrawing when a new
+/// value is "equal" to the old one. Comparing drafts by id made every edit look like no change,
+/// so new items only appeared after a scroll forced a redraw.
+struct ReceiptDraft: Identifiable {
     let id = UUID()
     var merchant: String
     var date: Date
@@ -42,9 +46,6 @@ struct ReceiptDraft: Identifiable, Hashable {
 
     /// Ready to save without a second look: it has a shop name and the items add up.
     var looksRight: Bool { !merchant.isEmpty && itemsMatch }
-
-    static func == (a: ReceiptDraft, b: ReceiptDraft) -> Bool { a.id == b.id }
-    func hash(into hasher: inout Hasher) { hasher.combine(id) }
 
     /// Saves it as a receipt. With `learn` on, every category you changed becomes a rule,
     /// so the same shop or item is right automatically next time.

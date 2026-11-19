@@ -29,6 +29,8 @@ struct RootTabView: View {
         .onChange(of: scenePhase, initial: true) { _, phase in
             // Weekly Notion copy: runs when the app opens, if a week has passed and there's internet.
             if phase == .active {
+                // Removes receipt photos past the limit chosen in Settings → Storage, if any.
+                PhotoCleanup.run(context: modelContext)
                 Task { await NotionSync.shared.syncIfDue(context: modelContext) }
             }
         }

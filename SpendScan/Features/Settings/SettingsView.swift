@@ -10,6 +10,8 @@ enum SettingsKeys {
     static let appearance = "appearance"
     static let userName = "userName"
     static let keepReceiptPhotos = "keepReceiptPhotos"
+    /// 0 keeps photos forever; otherwise photos older than this many days are removed.
+    static let photoRetentionDays = "photoRetentionDays"
 }
 
 /// Light, dark, or follow the iPhone. Every colour in Theme.swift has a light and a dark value.
@@ -54,6 +56,8 @@ struct SettingsView: View {
     @State private var showRestoreImporter = false
     @State private var backupMessage: String?
     @AppStorage(SettingsKeys.keepReceiptPhotos) private var keepPhotos = true
+    @AppStorage(SettingsKeys.photoRetentionDays) private var photoRetention = PhotoRetention.forever
+    @State private var confirmRetention: PhotoRetention?
     @State private var shrinking = false
     @State private var confirmRemovePhotos = false
     @State private var storageMessage: String?
@@ -133,6 +137,13 @@ struct SettingsView: View {
                 Section {
                     LabeledContent("Receipt photos", value: photosSizeText)
                     Toggle("Keep receipt photos", isOn: $keepPhotos)
+                    if keepPhotos {
+                        Picker("Delete old photos", selection: retentionBinding) {
+                            ForEach(PhotoRetention.allCases) { option in
+                                Text(option.title).tag(option)
+                            }
+                        }
+                    }
                     Button {
                         Task { await shrinkPhotos() }
                     } label: {
@@ -147,7 +158,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Storage")
                 } footer: {
-                    Text("New photos are saved smaller automatically. Shrink saved photos to make older ones smaller too; they stay easy to read. With Keep receipt photos off, only the items and totals are saved.")
+                    Text("New photos are saved smaller automatically. Shrink saved photos to make older ones smaller too; they stay easy to read. With Keep receipt photos off, only the items and totals are saved. Delete after 90 days removes a photo 90 days after you add the receipt; the receipt itself stays.")
                 }
 
                 Section("Privacy and data") {
@@ -197,6 +208,13 @@ struct SettingsView: View {
             }
             .confirmationDialog("Remove all receipt photos?", isPresented: $confirmRemovePhotos, titleVisibility: .visible) {
                 Button("Remove photos", role: .destructive) { removeAllPhotos() }
+            } message: {
+                Text("Your receipts, items and totals stay. Only the pictures are deleted, and this can't be undone.")
+            }
+            .confirmationDialog(retentionQuestion, isPresented: retentionConfirmBinding, titleVisibility: .visible) {
+                Button("Delete old photos", role: .destructive) {
+                    if let choice = confirmRetention { applyRetention(choice) }
+                }
             } message: {
                 Text("Your receipts, items and totals stay. Only the pictures are deleted, and this can't be undone.")
             }
@@ -262,6 +280,42 @@ extension SettingsView {
         storageMessage = saved > 0
             ? "Done. Freed \(Int64(saved).formatted(.byteCount(style: .file)))."
             : "Your photos are already small."
+    }
+
+    /// Choosing a limit asks first if it would delete photos straight away.
+    private var retentionBinding: Binding<PhotoRetention> {
+        Binding {
+            photoRetention
+        } set: { choice in
+            guard let cutoff = choice.cutoff() else {
+                photoRetention = choice
+                return
+            }
+            if receipts.contains(where: { $0.createdAt < cutoff && $0.imageData != nil }) {
+                confirmRetention = choice
+            } else {
+                photoRetention = choice
+            }
+        }
+    }
+
+    private var retentionConfirmBinding: Binding<Bool> {
+        Binding(get: { confirmRetention != nil }, set: { if !$0 { confirmRetention = nil } })
+    }
+
+    private var retentionQuestion: String {
+        guard let choice = confirmRetention, let cutoff = choice.cutoff() else { return "" }
+        let count = receipts.filter { $0.createdAt < cutoff && $0.imageData != nil }.count
+        return "Delete \(count) photo\(count == 1 ? "" : "s") older than \(choice.rawValue) days?"
+    }
+
+    private func applyRetention(_ choice: PhotoRetention) {
+        photoRetention = choice
+        let before = photoBytes
+        PhotoCleanup.run(context: modelContext, retention: choice)
+        measurePhotos()
+        let freed = max(before - photoBytes, 0)
+        storageMessage = "Removed old photos and freed \(Int64(freed).formatted(.byteCount(style: .file)))."
     }
 
     private func removeAllPhotos() {
